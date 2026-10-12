@@ -1,0 +1,70 @@
+name: Release
+
+# Triggered by the version bump script (scripts/release.sh) which pushes a
+# `vX.Y.Z` tag. Tags are the single source of truth for a release.
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+*"
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # 1. Create the GitHub Release for the tag, with release notes generated
+  #    automatically from the commits since the previous tag.
+  create-release:
+    name: Create release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+
+  # 2. Cross-compile binaries for every supported platform and attach them
+  #    (plus sha256 checksums) to the release created above.
+  build-and-upload:
+    name: Build ${{ matrix.target }}
+    needs: create-release
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-latest
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+          - target: aarch64-pc-windows-msvc
+            os: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build & upload binary
+        uses: taiki-e/upload-rust-binary-action@v1
+        with:
+          bin: portli
+          target: ${{ matrix.target }}
+          archive: portli-$tag-$target
+          checksum: sha256
+          token: ${{ secrets.GITHUB_TOKEN }}
